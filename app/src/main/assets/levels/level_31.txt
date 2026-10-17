@@ -1,0 +1,14 @@
+# Level 31: source-informed BlackBerry-style reconstruction.
+# Hand-built from 2010 walkthrough descriptions; GIF coordinates NOT independently verified.
+# R=1 hit; 2/3/4=hit points; S=steel; .=empty.
+# Source: https://www.brickbreakerguide.com/brick-breaker-level-31-walkthrough/
+SS.SS
+S...S
+SS.SS
+S.R.S
+S.S.S
+S.R.S
+SS.SS
+S...S
+SSSSS
+capsules:

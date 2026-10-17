@@ -1,0 +1,13 @@
+# Level 12: source-informed BlackBerry-style reconstruction.
+# Hand-built from 2010 walkthrough descriptions; GIF coordinates NOT independently verified.
+# R=1 hit; 2/3/4=hit points; S=steel; .=empty.
+# Source: https://www.brickbreakerguide.com/brick-breaker-level-12-walkthrough/
+.444.
+44S44
+4...4
+4.S.4
+4...4
+4.S.4
+2...2
+2...2
+capsules:

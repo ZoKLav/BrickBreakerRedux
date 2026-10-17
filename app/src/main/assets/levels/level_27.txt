@@ -1,0 +1,14 @@
+# Level 27: source-informed BlackBerry-style reconstruction.
+# Hand-built from 2010 walkthrough descriptions; GIF coordinates NOT independently verified.
+# R=1 hit; 2/3/4=hit points; S=steel; .=empty.
+# Source: https://www.brickbreakerguide.com/brick-breaker-level-27-walkthrough/
+SSSSS
+S...S
+S.3.S
+S...S
+SSS.S
+S...S
+SSS.S
+S...S
+SSSSS
+capsules:

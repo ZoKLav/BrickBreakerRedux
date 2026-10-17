@@ -1,0 +1,16 @@
+# Level 29: source-informed BlackBerry-style reconstruction.
+# Hand-built from 2010 walkthrough descriptions; GIF coordinates NOT independently verified.
+# R=1 hit; 2/3/4=hit points; S=steel; .=empty.
+# Source: https://www.brickbreakerguide.com/brick-breaker-level-29-walkthrough/
+R.SSS
+..S.S
+R.S.S
+S.S.S
+S...S
+SSS.S
+R...S
+SSS.S
+R...S
+SSS.S
+R...S
+capsules:

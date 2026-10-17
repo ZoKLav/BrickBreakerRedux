@@ -1,0 +1,15 @@
+# Level 16: source-informed BlackBerry-style reconstruction.
+# Hand-built from 2010 walkthrough descriptions; GIF coordinates NOT independently verified.
+# R=1 hit; 2/3/4=hit points; S=steel; .=empty.
+# Source: https://www.brickbreakerguide.com/brick-breaker-level-16-walkthrough/
+S333S
+S222S
+S222S
+S2R2S
+S...S
+S...S
+S...S
+SSSSS
+S...S
+S...S
+capsules:

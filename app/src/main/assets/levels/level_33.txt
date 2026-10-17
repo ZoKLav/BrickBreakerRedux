@@ -1,0 +1,15 @@
+# Level 33: source-informed BlackBerry-style reconstruction.
+# Hand-built from 2010 walkthrough descriptions; GIF coordinates NOT independently verified.
+# R=1 hit; 2/3/4=hit points; S=steel; .=empty.
+# Source: https://www.brickbreakerguide.com/brick-breaker-level-33-walkthrough/
+S.R.S
+R.S.R
+.R.R.
+SS.SS
+R.R.R
+.S.S.
+R.R.R
+S.S.S
+..R..
+SS.SS
+capsules:

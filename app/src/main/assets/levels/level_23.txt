@@ -1,0 +1,14 @@
+# Level 23: source-informed BlackBerry-style reconstruction.
+# Hand-built from 2010 walkthrough descriptions; GIF coordinates NOT independently verified.
+# R=1 hit; 2/3/4=hit points; S=steel; .=empty.
+# Source: https://www.brickbreakerguide.com/brick-breaker-level-23-walkthrough/
+2S3S2
+22222
+S2S2S
+2R2R2
+SS.SS
+2R2R2
+2S2S2
+SS.SS
+R...R
+capsules:
