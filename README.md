@@ -114,3 +114,10 @@ All background images are stored as replaceable PNG assets.
 - Introduced Easy, Normal, and Hard difficulty settings.
 - Added a title screen, pause functionality, and saved high scores.
 - Established the BlackBerry-inspired visual style and Android build configuration.
+
+  ## Screenshots
+
+<p align="center">
+  <img src="screenshots/1.png" width="45%" alt="Screenshot 1">
+  <img src="screenshots/2.png" width="45%" alt="Screenshot 2">
+</p>
