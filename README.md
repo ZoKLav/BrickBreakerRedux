@@ -74,6 +74,30 @@ All background images are stored as replaceable PNG assets.
 
 ## Version History
 
+### v1.6 — Adaptive Display Update
+- Replaced device-specific display layouts with a fully responsive scaling system.
+- Added automatic playfield resizing based on available screen dimensions and aspect ratio.
+- Improved compatibility with standard smartphones, foldable cover screens, tablets, and landscape displays.
+- Added dynamic brick positioning and spacing to prevent overlap with the paddle and controls.
+- Improved automatic resizing when switching between internal and external foldable displays.
+- Updated paddle movement, FIRE controls, and touch detection to match the resized playfield.
+- Improved handling of display cutouts and camera clearance.
+- Adjusted ball movement to maintain consistent gameplay across different screen proportions.
+- Fixed excessive playfield shrinking on compact and nearly square displays.
+- Preserved existing gameplay mechanics, difficulty settings, power-ups, and level progression.
+
+- ### v1.5 — Full-Width Cover Display Update
+- Redesigned the playfield layout for compact and nearly square displays.
+- Increased playfield width to utilize substantially more of the available screen space.
+- Replaced uniform scaling with a layout that adjusts brick spacing and positioning independently.
+- Reduced excessive empty margins on foldable cover screens.
+- Improved paddle positioning to prevent overlap with brick formations.
+- Relocated the FIRE button to the lower-left corner on compact displays.
+- Improved touch coordinate mapping for resized gameplay elements.
+- Added clearance for camera cutouts on the Motorola Razr+ external display.
+- Preserved the standard portrait layout on conventional smartphone screens.
+- Improved gameplay visibility and usability on smaller displays.
+
 ### v1.4 — Display, Visual & Power-Up Update
 - Redesigned all 34 level backgrounds with illustrated environments.
 - Improved scaling for square and compact displays.
