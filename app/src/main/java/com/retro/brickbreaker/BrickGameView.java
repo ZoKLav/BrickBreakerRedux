@@ -2,6 +2,7 @@ package com.retro.brickbreaker;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.os.Build;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
@@ -14,6 +15,8 @@ import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.view.MotionEvent;
+import android.view.WindowInsets;
+import android.view.DisplayCutout;
 import android.view.View;
 
 import java.io.IOException;
@@ -30,7 +33,8 @@ import java.util.Random;
 
 /**
  * Standalone portrait arcade engine; no external gameplay libraries.
- * Logical coordinates are 240 units wide, height adapts to the device.
+ * Logical coordinates are 240 units wide; vertical geometry adapts continuously
+ * to screen height, preserving space for HUD, bricks, paddle, and controls.
  * All graphics are canvas-drawn or PNGs in assets/ and can be changed.
  */
 public final class BrickGameView extends View {
@@ -61,6 +65,10 @@ public final class BrickGameView extends View {
     private Bitmap background, brickRed, brickTwo, brickThree, brickFour, brickSilver, paddleImage, menuImage;
     private float scale = 1f, offsetX = 0f, offsetY = 0f, worldHeight = 440f, paddleY = 395f;
     private boolean compactCover;
+    private int bottomCutoutPixels = 0;
+    private float brickStartY = LevelData.START_Y;
+    private float brickPitch = LevelData.PITCH_Y, brickHeight = LevelData.BRICK_H;
+    private int descentSteps = 0;
     private float paddleX = 120f, paddleTarget = 120f, paddleWidth = 46f;
     private float timeSeconds = 0f, clearCounter, descendClock;
     private long lastFrameNanos;
@@ -139,18 +147,66 @@ public final class BrickGameView extends View {
 
     @Override protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
+        updateViewport(w, h);
+    }
+
+    /**
+     * Insets are delivered independently of size changes on some foldables.
+     * Detect physical bottom camera cutouts where Android exposes them, rather
+     * than assuming a specific phone DPI or guessing an inset in pixels.
+     */
+    @Override public WindowInsets onApplyWindowInsets(WindowInsets insets) {
+        if (Build.VERSION.SDK_INT >= 28 && insets != null) {
+            DisplayCutout cutout = insets.getDisplayCutout();
+            int reserve = 0;
+            if (cutout != null && getWidth() > 0 && getHeight() > 0) {
+                int[] origin = new int[2];
+                getLocationOnScreen(origin);
+                for (Rect bounds : cutout.getBoundingRects()) {
+                    int localTop = bounds.top - origin[1];
+                    int localBottom = bounds.bottom - origin[1];
+                    int localLeft = bounds.left - origin[0];
+                    if (localTop > getHeight() * .52f && localTop < getHeight()
+                            && localBottom > localTop && localLeft < getWidth()) {
+                        reserve = Math.max(reserve, getHeight() - localTop);
+                    }
+                }
+            }
+            if (reserve != bottomCutoutPixels) {
+                bottomCutoutPixels = reserve;
+                updateViewport(getWidth(), getHeight());
+            }
+        }
+        return super.onApplyWindowInsets(insets);
+    }
+
+    private void updateViewport(int w, int h) {
         if (w <= 0 || h <= 0) return;
         float oldPaddleY = paddleY;
         float[] frame = GameplayRules.fittedViewport(w, h);
         scale = frame[0]; offsetX = frame[1]; offsetY = frame[2];
         worldHeight = frame[3]; compactCover = frame[4] > 0f;
-        paddleY = worldHeight - 45f;
-        // On fold/unfold, keep a live ball near the paddle, not below the new screen.
-        if (phase == PLAY) {
-            for (Ball ball : balls) if (ball.y > oldPaddleY - 90f)
-                ball.y += paddleY - oldPaddleY;
+        paddleY = GameplayRules.paddleY(worldHeight, bottomCutoutPixels / scale);
+        layoutBricks();
+        // Reproject every active object's Y when the phone is folded/unfolded
+        // or the cover changes its camera/full-screen mode.
+        if (phase == PLAY || phase == READY || phase == PAUSED) {
+            for (Ball ball : balls) {
+                float progress = (ball.y - 43f) / Math.max(1f, oldPaddleY - 43f);
+                ball.y = Math.max(45f, Math.min(paddleY - ballRadius() - .3f,
+                        43f + progress * (paddleY - 43f)));
+            }
+            for (Drop drop : drops) {
+                float progress = (drop.y - 43f) / Math.max(1f, oldPaddleY - 43f);
+                drop.y = 43f + progress * (paddleY - 43f);
+            }
+            for (Shot shot : shots) {
+                float progress = (shot.y - 43f) / Math.max(1f, oldPaddleY - 43f);
+                shot.y = 43f + progress * (paddleY - 43f);
+            }
         }
         if (phase == READY && !balls.isEmpty()) attachBall();
+        invalidate();
     }
 
     void resetFrameTime() { lastFrameNanos = 0L; invalidate(); }
@@ -197,6 +253,8 @@ public final class BrickGameView extends View {
 
     private void newStage() {
         bricks = LevelData.forLevel(level, loadLevelMap());
+        descentSteps = 0;
+        layoutBricks();
         background = backgroundFor(false);
         paddleX = WIDTH * .5f;
         paddleTarget = paddleX;
@@ -218,6 +276,17 @@ public final class BrickGameView extends View {
         invalidate();
         toast = "LEVEL " + (level + cycle * LevelData.FINAL_LEVEL);
         toastClock = 1.4f;
+    }
+
+    /** Bricks, rendering, and hitboxes share one responsive geometry. */
+    private void layoutBricks() {
+        int highestRow = 9; // Stable spacing on levels with only one brick.
+        for (LevelData.Brick brick : bricks) highestRow = Math.max(highestRow, brick.row);
+        brickStartY = GameplayRules.brickStartY(worldHeight);
+        brickPitch = GameplayRules.brickPitch(worldHeight, paddleY, highestRow);
+        brickHeight = GameplayRules.brickHeight(brickPitch);
+        for (LevelData.Brick brick : bricks)
+            brick.y = brickStartY + (brick.row + descentSteps) * brickPitch;
     }
 
     private void resetPower() {
@@ -263,7 +332,8 @@ public final class BrickGameView extends View {
         else if (cycle == 1) fast = hitsThisLife < 98;
         else fast = false;
         if (power == SLOW) fast = false;
-        return (fast ? basic * 1.53f : basic) * (power == SLOW ? .83f : 1f);
+        return (fast ? basic * 1.53f : basic) * (power == SLOW ? .83f : 1f)
+                * GameplayRules.speedMultiplier(worldHeight);
     }
 
     private void regulateSpeed(Ball ball) {
@@ -281,13 +351,13 @@ public final class BrickGameView extends View {
         lastFrameNanos = now;
         if (phase == PLAY || phase == READY || phase == CLEAR) update(delta);
         canvas.save();
-        // Draw dark decorative gutters on compact covers without placing controls
-        // or bricks behind the Razr's lower camera lenses.
+        // Board uses the view width, except on extremely wide/short screens.
         if (compactCover) drawCoverGutters(canvas);
         canvas.translate(offsetX, offsetY);
         canvas.scale(scale, scale);
         canvas.clipRect(0, 0, WIDTH, worldHeight);
         renderBackground(canvas);
+        if (compactCover && phase != MENU) drawCoverFooter(canvas);
         if (phase == MENU) renderMenu(canvas);
         else {
             renderGame(canvas);
@@ -355,9 +425,10 @@ public final class BrickGameView extends View {
             descendClock += dt;
             if (descendClock >= GameplayRules.descentInterval(difficulty)) {
                 descendClock = 0f;
-                for (LevelData.Brick brick : bricks) if (brick.alive) brick.y += LevelData.PITCH_Y;
+                descentSteps++;
+                for (LevelData.Brick brick : bricks) if (brick.alive) brick.y += brickPitch;
                 for (LevelData.Brick brick : bricks) {
-                    if (brick.alive && brick.y + LevelData.BRICK_H >= paddleY - 18f) {
+                    if (brick.alive && brick.y + brickHeight >= paddleY - 18f) {
                         loseLife();
                         break;
                     }
@@ -422,10 +493,10 @@ public final class BrickGameView extends View {
             for (LevelData.Brick brick : bricks) {
                 if (!brick.alive) continue;
                 if (b.x + radius <= brick.x || b.x - radius >= brick.x + LevelData.BRICK_W
-                        || b.y + radius <= brick.y || b.y - radius >= brick.y + LevelData.BRICK_H) continue;
+                        || b.y + radius <= brick.y || b.y - radius >= brick.y + brickHeight) continue;
                 // Resolve on the entry side to get recognizable brickbreaker reflection.
                 if (power != PIERCE || brick.strength == -1) {
-                    if (py + radius <= brick.y || py - radius >= brick.y + LevelData.BRICK_H) b.vy = -b.vy;
+                    if (py + radius <= brick.y || py - radius >= brick.y + brickHeight) b.vy = -b.vy;
                     else if (px + radius <= brick.x || px - radius >= brick.x + LevelData.BRICK_W) b.vx = -b.vx;
                     else b.vy = -b.vy;
                     b.x = px;
@@ -458,7 +529,7 @@ public final class BrickGameView extends View {
             boolean hit = false;
             for (LevelData.Brick brick : bricks) {
                 if (brick.alive && shot.x >= brick.x && shot.x <= brick.x + LevelData.BRICK_W
-                        && shot.y >= brick.y && shot.y <= brick.y + LevelData.BRICK_H) {
+                        && shot.y >= brick.y && shot.y <= brick.y + brickHeight) {
                     if (brick.strength == -1 && !shot.gun) {
                         audio.play(RetroAudio.HIT);
                     } else if (shot.gun) {
@@ -505,7 +576,7 @@ public final class BrickGameView extends View {
      */
     private void detonateAt(LevelData.Brick center) {
         explosionX = center.x + LevelData.BRICK_W * .5f;
-        explosionY = center.y + LevelData.BRICK_H * .5f;
+        explosionY = center.y + brickHeight * .5f;
         explosionClock = .65f;
         // Explosion is a distinct, one-use capsule, not a timed mode.
         center.strength = 1;
@@ -545,7 +616,7 @@ public final class BrickGameView extends View {
     private void maybeDropPowerup(LevelData.Brick brick) {
         if (brick.strength == -1 || !GameplayRules.powerupDrops(difficulty, rng.nextFloat())) return;
         drops.add(new Drop(brick.x + LevelData.BRICK_W / 2f,
-                brick.y + LevelData.BRICK_H, rng.nextInt(GameplayRules.capsuleVariety())));
+                brick.y + brickHeight, rng.nextInt(GameplayRules.capsuleVariety())));
     }
 
     private void addScore(int points) {
@@ -681,7 +752,7 @@ public final class BrickGameView extends View {
             if (phase == MENU) {
                 if (GameplayRules.backgroundToggleTouch(x, y, worldHeight, true)) {
                     switchBackgrounds();
-                } else if (y >= worldHeight * .68f && y <= worldHeight * .83f) {
+                } else if (GameplayRules.difficultyTouch(y, worldHeight)) {
                     difficulty = (difficulty + 1) % 3;
                     prefs.edit().putInt("difficulty", difficulty).apply();
                     audio.play(RetroAudio.CATCH);
@@ -752,21 +823,24 @@ public final class BrickGameView extends View {
     }
 
     private void drawCoverGutters(Canvas c) {
+        // Only visible on aspect ratios so short that 184 logical units cannot
+        // fill the width. Standard Razr cover displays have NO side gutters.
         c.drawColor(Color.rgb(22, 32, 48));
+    }
+
+    private void drawCoverFooter(Canvas c) {
+        // A lightweight camera strip: all playable objects stop above it. The
+        // FIRE button is placed at the LEFT; lower right may be occluded by lenses.
+        float start = paddleY + 22f;
+        if (start >= worldHeight - 8f) return;
         p.setShader(null);
-        p.setColor(Color.rgb(43, 65, 89));
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(Math.max(1f, scale));
-        float left = offsetX - 9f, right = offsetX + WIDTH * scale + 9f;
-        c.drawLine(left, 0f, left, worldHeight * scale, p);
-        c.drawLine(right, 0f, right, worldHeight * scale, p);
-        p.setStyle(Paint.Style.FILL);
-        p.setColor(Color.rgb(176, 191, 209));
-        p.setTextSize(Math.max(12f, scale * 8f));
-        p.setTypeface(Typeface.create("monospace", Typeface.BOLD));
-        p.setTextAlign(Paint.Align.CENTER);
-        c.drawText("COVER DISPLAY  -  SAFE PLAYFIELD", getWidth() * .5f,
-                Math.min(getHeight() - 12f, worldHeight * scale + 27f), p);
+        p.setColor(Color.argb(118, 18, 34, 53));
+        c.drawRoundRect(9f, start, WIDTH - 9f, worldHeight - 9f, 5f, 5f, p);
+        if (phase == PLAY || phase == CLEAR) {
+            label(c, "DRAG ABOVE  |  FIRE BELOW", WIDTH * .51f,
+                    Math.min(start + 12f, worldHeight - 17f), 7.5f,
+                    Color.rgb(242, 246, 251), Paint.Align.CENTER);
+        }
     }
 
     private void renderBackground(Canvas c) {
@@ -842,7 +916,7 @@ public final class BrickGameView extends View {
             if (!b.alive) continue;
             Bitmap img = b.strength == -1 ? brickSilver :
                     b.strength >= 4 ? brickFour : b.strength == 3 ? brickThree : b.strength == 2 ? brickTwo : brickRed;
-            drawSprite(c, img, b.x, b.y, LevelData.BRICK_W, LevelData.BRICK_H,
+            drawSprite(c, img, b.x, b.y, LevelData.BRICK_W, brickHeight,
                     b.strength == -1 ? Color.GRAY : Color.rgb(176, 18, 16));
         }
         for (Drop d : drops) drawCapsule(c, d);
@@ -886,19 +960,27 @@ public final class BrickGameView extends View {
             c.drawRoundRect(10, worldHeight - 17f, WIDTH - 10, worldHeight - 14f, 2f, 2f, p);
         }
         if (phase == READY) {
-            label(c, "TAP PADDLE TO LAUNCH", WIDTH/2f, paddleY - 27,
-                    12f, Color.rgb(44, 44, 53), Paint.Align.CENTER);
+            if (compactCover) {
+                label(c, "TAP PADDLE TO LAUNCH", WIDTH/2f, worldHeight - 17f,
+                        9.5f, Color.rgb(242, 247, 255), Paint.Align.CENTER);
+            } else {
+                label(c, "TAP PADDLE TO LAUNCH", WIDTH/2f, paddleY - 27,
+                        12f, Color.rgb(44, 44, 53), Paint.Align.CENTER);
+            }
         }
         if (power == LASER || power == GUN) {
-            p.setColor(Color.argb(205, 235, 237, 239));
-            c.drawRoundRect(174, worldHeight - 118, 227, worldHeight - 73, 6, 6, p);
+            float[] fire = GameplayRules.fireBounds(worldHeight);
+            float centerX = (fire[0] + fire[2]) * .5f;
+            float centerY = (fire[1] + fire[3]) * .5f;
+            p.setColor(Color.argb(235, 235, 237, 239));
+            c.drawRoundRect(fire[0], fire[1], fire[2], fire[3], 6, 6, p);
             p.setColor(Color.rgb(41, 81, 202));
             p.setStyle(Paint.Style.STROKE);
             p.setStrokeWidth(1.7f);
-            c.drawRoundRect(174, worldHeight - 118, 227, worldHeight - 73, 6, 6, p);
+            c.drawRoundRect(fire[0], fire[1], fire[2], fire[3], 6, 6, p);
             p.setStyle(Paint.Style.FILL);
-            label(c, "FIRE", 200, worldHeight - 94, 10, Color.rgb(23, 58, 165), Paint.Align.CENTER);
-            if (power == GUN) label(c, "x" + gunBullets, 200, worldHeight - 82, 8, Color.BLACK, Paint.Align.CENTER);
+            label(c, "FIRE", centerX, centerY + 3f, 10, Color.rgb(23, 58, 165), Paint.Align.CENTER);
+            if (power == GUN) label(c, "x" + gunBullets, centerX, centerY + 12f, 8, Color.BLACK, Paint.Align.CENTER);
         }
         if (shieldReady) label(c, "SHIELD READY", 55f, worldHeight - 17, 8f,
                 Color.rgb(29, 85, 172), Paint.Align.LEFT);
@@ -949,8 +1031,9 @@ public final class BrickGameView extends View {
     private void drawBackgroundToggle(Canvas c, boolean menu) {
         float left = menu ? 69f : 141f;
         float right = menu ? 229f : 204f;
-        float centerY = menu ? worldHeight * .855f : 33f;
-        float hh = menu ? 11f : 7f;
+        float centerY = menu ? (worldHeight < 340f ? worldHeight * .88f
+                : worldHeight * .855f) : 33f;
+        float hh = menu ? (worldHeight < 340f ? 10f : 11f) : 7f;
         p.setShader(null);
         p.setColor(Color.argb(225, 228, 232, 241));
         c.drawRoundRect(left, centerY - hh, right, centerY + hh, 4f, 4f, p);
@@ -967,21 +1050,39 @@ public final class BrickGameView extends View {
     private void renderMenu(Canvas c) {
         p.setColor(Color.argb(60, 255, 255, 255));
         c.drawRect(9, 9, WIDTH - 9, worldHeight - 9, p);
-        label(c, "THE HANDHELD CLASSIC REIMAGINED", WIDTH/2f, worldHeight * .18f, 8.5f,
-                Color.rgb(70, 69, 76), Paint.Align.CENTER);
-        labelOutlined(c, "BRICK", WIDTH / 2, worldHeight * .32f, 34);
-        labelOutlined(c, "BREAKER", WIDTH / 2, worldHeight * .42f, 31);
-        label(c, "R E M I X", WIDTH / 2f, worldHeight * .465f, 14f,
-                Color.rgb(32, 72, 169), Paint.Align.CENTER);
-        drawSprite(c, paddleImage, WIDTH/2 - 28, worldHeight*.50f, 56, 16, Color.BLUE);
-        drawBall(c, WIDTH / 2f, worldHeight*.49f);
-        drawMenuButton(c, "TAP TO PLAY", worldHeight * .615f);
-        drawMenuButton(c, "DIFFICULTY: " + DIFFICULTIES[difficulty], worldHeight * .74f);
-        label(c, "TAP DIFFICULTY TO CHANGE", WIDTH/2, worldHeight*.795f, 8.5f,
-                Color.rgb(62, 62, 72), Paint.Align.CENTER);
-        drawBackgroundToggle(c, true);
-        label(c, "BEST " + highScore, WIDTH/2, worldHeight*.925f, 10,
-                Color.rgb(76, 76, 78), Paint.Align.CENTER);
+        if (worldHeight < 340f) {
+            // A separate compact arrangement prevents buttons from overlapping
+            // on short cover displays; its touch targets match these positions.
+            label(c, "THE HANDHELD CLASSIC REIMAGINED", WIDTH/2f,
+                    worldHeight * .095f, 7.2f, Color.rgb(70, 69, 76), Paint.Align.CENTER);
+            labelOutlined(c, "BRICK", WIDTH/2f, worldHeight * .245f, 26f);
+            labelOutlined(c, "BREAKER", WIDTH/2f, worldHeight * .370f, 24f);
+            label(c, "R E M I X", WIDTH/2f, worldHeight * .435f, 11f,
+                    Color.rgb(32, 72, 169), Paint.Align.CENTER);
+            drawMenuButton(c, "TAP TO PLAY", worldHeight * .555f, 16f);
+            drawMenuButton(c, "DIFFICULTY: " + DIFFICULTIES[difficulty],
+                    worldHeight * .725f, 15f);
+            drawBackgroundToggle(c, true);
+            if (worldHeight >= 225f) label(c, "BEST " + highScore, WIDTH/2f,
+                    worldHeight - 10f, 8f, Color.DKGRAY, Paint.Align.CENTER);
+        } else {
+            label(c, "THE HANDHELD CLASSIC REIMAGINED", WIDTH/2f,
+                    worldHeight * .18f, 8.5f, Color.rgb(70, 69, 76), Paint.Align.CENTER);
+            labelOutlined(c, "BRICK", WIDTH / 2, worldHeight * .32f, 34);
+            labelOutlined(c, "BREAKER", WIDTH / 2, worldHeight * .42f, 31);
+            label(c, "R E M I X", WIDTH / 2f, worldHeight * .465f, 14f,
+                    Color.rgb(32, 72, 169), Paint.Align.CENTER);
+            drawSprite(c, paddleImage, WIDTH/2 - 28, worldHeight*.50f, 56, 16, Color.BLUE);
+            drawBall(c, WIDTH / 2f, worldHeight*.49f);
+            drawMenuButton(c, "TAP TO PLAY", worldHeight * .615f, 23f);
+            drawMenuButton(c, "DIFFICULTY: " + DIFFICULTIES[difficulty],
+                    worldHeight * .74f, 23f);
+            label(c, "TAP DIFFICULTY TO CHANGE", WIDTH/2, worldHeight*.795f, 8.5f,
+                    Color.rgb(62, 62, 72), Paint.Align.CENTER);
+            drawBackgroundToggle(c, true);
+            label(c, "BEST " + highScore, WIDTH/2, worldHeight*.925f, 10,
+                    Color.rgb(76, 76, 78), Paint.Align.CENTER);
+        }
     }
 
     private void labelOutlined(Canvas c, String value, float x, float baseline, float size) {
@@ -997,13 +1098,13 @@ public final class BrickGameView extends View {
         c.drawText(value, x, baseline, p);
     }
 
-    private void drawMenuButton(Canvas c, String text, float centerY) {
+    private void drawMenuButton(Canvas c, String text, float centerY, float halfHeight) {
         p.setColor(Color.rgb(16, 42, 115));
-        c.drawRoundRect(31, centerY - 23, 209, centerY + 23, 5, 5, p);
+        c.drawRoundRect(31, centerY - halfHeight, 209, centerY + halfHeight, 5, 5, p);
         p.setColor(Color.rgb(58, 119, 246));
-        c.drawRoundRect(34, centerY - 20, 206, centerY + 18, 4, 4, p);
+        c.drawRoundRect(34, centerY - halfHeight + 3f, 206, centerY + halfHeight - 3f, 4, 4, p);
         p.setColor(Color.rgb(187, 219, 255));
-        c.drawRect(37, centerY - 17, 203, centerY - 13, p);
+        c.drawRect(37, centerY - halfHeight + 5f, 203, centerY - halfHeight + 7f, p);
         label(c, text, WIDTH/2, centerY + 4.5f,
                 text.startsWith("DIFFICULTY") ? 11.5f : 15,
                 Color.WHITE, Paint.Align.CENTER);
